@@ -13,4 +13,5 @@ env/
 *.db
 *.sqlite3
 
-*.log
+*.logdata/*.csv
+models/*.pkl
