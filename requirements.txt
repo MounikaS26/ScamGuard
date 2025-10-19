@@ -1,1 +1,7 @@
-flask
+Flask
+Werkzeug
+pandas
+scikit-learn
+numpy
+textblob
+pyspellchecker

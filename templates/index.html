@@ -1,26 +1,55 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>ScamGuard - Fake Job & Scam Detection</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div class="container">
-        <h1>ScamGuard</h1>
-        <p>Paste any job description or email text below:</p>
-        
-        <form method="POST">
-            <textarea name="job_text" rows="10" cols="60" placeholder="Paste job description here..."></textarea>
-            <br><br>
-            <button type="submit">Analyze</button>
-        </form>
+{% extends "base.html" %}
+{% block title %}ScamGuard - Detect Fake Jobs{% endblock %}
 
-        {% if result %}
-            <div class="result-box">
-                <h3>Result:</h3>
-                <p>{{ result }}</p>
-            </div>
-        {% endif %}
+{% block content %}
+<div class="card">
+  <h1 class="center">Fake Job & Scam Detection</h1>
+  <p class="sub center">Paste a job post. We’ll analyze it and flag potential scams.</p>
+
+  <form method="POST" class="form">
+    <div class="form-group">
+      <label for="job_posting">Paste the Job Posting</label>
+      <textarea
+        name="job_posting"
+        id="job_posting"
+        rows="12"
+        placeholder="Paste the entire job posting here…"
+        required
+      >{{ input_text or '' }}</textarea>
     </div>
-</body>
-</html>
+
+    <div class="button-group">
+      <button type="submit" class="btn btn-primary">🔍 Analyze</button>
+      <button type="button" class="btn btn-muted" onclick="clearForm()">🧹 Clear</button>
+    </div>
+  </form>
+
+  {% if prediction %}
+    <div class="result {{ 'fake' if 'Fake' in prediction else 'real' }}">
+      <h2>{{ prediction }}</h2>
+      {% if confidence is not none %}
+        <div class="meter">
+          <div class="meter-fill" style="width: {{ confidence }}%"></div>
+        </div>
+        <p class="confidence">Confidence: <strong>{{ confidence }}%</strong></p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if error_message %}
+    <div class="result error">
+      <h2>⚠️ Error</h2>
+      <p>{{ error_message }}</p>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+  function clearForm() {
+    const ta = document.getElementById('job_posting');
+    if (ta) ta.value = '';
+    // Remove result/error boxes without full reload
+    document.querySelectorAll('.result').forEach(el => el.remove());
+  }
+</script>
+{% endblock %}
