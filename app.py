@@ -1,315 +1,205 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
-import os
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+import os, re, pickle, pandas as pd, numpy as np
 from dotenv import load_dotenv
-import hashlib
-import uuid
-from gmail_service import send_email
+from sklearn.preprocessing import LabelEncoder
+from functools import wraps
 
+# ------------------ Import Blueprints ------------------
+from auth import auth as auth_blueprint
+import auth as auth_module
 
-# Try importing Supabase
-try:
-    from supabase import create_client, Client
-    SUPABASE_AVAILABLE = True
-    print("✓ Supabase library imported successfully")
-except ImportError as e:
-    SUPABASE_AVAILABLE = False
-    print(f"✗ Failed to import Supabase: {e}")
-    print("Please run: python -m pip install supabase")
-
-# Load environment variables
+# ------------------ Load .env ------------------
 load_dotenv()
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-12345')
-
-# Initialize Supabase client
-supabase = None
-if SUPABASE_AVAILABLE:
-    supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_KEY')
-    
-    if supabase_url and supabase_key:
-        try:
-            supabase = create_client(supabase_url, supabase_key)
-            print("✓ Supabase client initialized successfully")
-        except Exception as e:
-            print(f"✗ Failed to initialize Supabase: {e}")
-            supabase = None
-    else:
-        print("✗ Please set SUPABASE_URL and SUPABASE_KEY in the .env file")
+# ------------------ Initialize Supabase ------------------
+if SUPABASE_URL and SUPABASE_KEY:
+    from supabase import create_client
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print("✓ Supabase client initialized successfully")
 else:
-    print("✗ Supabase unavailable, using in-memory storage")
+    supabase = None
+    print("✗ Supabase URL or KEY not found in .env")
 
-# Simple password hashing function
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+# Inject Supabase client into auth blueprint
+auth_module.supabase = supabase
 
-# Fallback in-memory storage (when Supabase is not available)
-if not supabase:
-    users = {
-        'admin': {
-            'id': '1', 
-            'Name': 'admin', 
-            'Password': hash_password('admin123'), 
-            'Email': 'admin@example.com',
-            'Permission level': 1  # admin privilege
-        },
-        'test': {
-            'id': '2', 
-            'Name': 'test', 
-            'Password': hash_password('test123'), 
-            'Email': 'test@example.com',
-            'Permission level': 0  # normal user privilege
-        }
-    }
-    print("✓ Using in-memory user storage")
+# ------------------ Initialize Flask ------------------
+app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "your_secret_key_here")
 
+# ------------------ Register Blueprints ------------------
+app.register_blueprint(auth_blueprint, url_prefix="/auth")
+
+# Import and register account blueprint
+from account import account as account_blueprint
+app.register_blueprint(account_blueprint, url_prefix="/account")
+
+# ------------------ Decorators ------------------
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if 'user_id' not in session:
+            flash("Please log in first!", "error")
+            return redirect(url_for('auth.login'))
+        return f(*args, **kwargs)
+    return wrapper
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if 'user_id' not in session or int(session.get("permission_level", 0)) < 1:
+            flash("Access denied: admin privileges required.", "error")
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return wrapper
+
+# ------------------ Home & Redirect ------------------
 @app.route("/")
 def home():
     if 'user_id' in session:
-        return redirect(url_for('detection'))
-    return redirect(url_for('login'))
+        return redirect(url_for("index"))
+    return redirect(url_for("auth.login"))
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "").strip()
-        
-        if not username or not password:
-            flash('Please enter both username and password!', 'error')
-            return render_template("login.html")
-        
-        try:
-            if supabase:
-                # Query user from Supabase (login table)
-                response = supabase.table("login")\
-                    .select("id, Name, Password, Email, Permission_level")\
-                    .eq("Name", username)\
-                    .execute()
-                
-                if response.data and len(response.data) > 0:
-                    user = response.data[0]
-                    if user['Password'] == hash_password(password):
-                        session['user_id'] = user['id']
-                        session['username'] = user['Name']
-                        session['permission_level'] = user.get('Permission_level', 0)
-                        flash('Login successful!', 'success')
-                        print(f"✓ User {username} logged in successfully via Supabase login table")
-                        return redirect(url_for('detection'))
-                    else:
-                        flash('Incorrect password!', 'error')
-                else:
-                    flash('User does not exist!', 'error')
-            else:
-                # Use in-memory storage
-                if username in users and users[username]['Password'] == hash_password(password):
-                    session['user_id'] = users[username]['id']
-                    session['username'] = users[username]['Name']
-                    session['permission_level'] = users[username].get('Permission level', 0)
-                    flash('Login successful!', 'success')
-                    print(f"✓ User {username} logged in successfully via in-memory storage")
-                    return redirect(url_for('detection'))
-                else:
-                    flash('Invalid username or password!', 'error')
-                    
-        except Exception as e:
-            print(f"Login error: {str(e)}")
-            flash('An error occurred during login, please try again later', 'error')
-    
-    return render_template("login.html")
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    level = int(session.get("permission_level", 0))
+    if level >= 1:
+        return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("user_dashboard"))
 
-@app.route("/forgot-password", methods=["GET", "POST"])
-def forgot_password():
-    if request.method == "POST":
-        email = request.form.get("email", "").strip()
-        
-        if not email:
-            flash('Please enter your email address!', 'error')
-        else:
-            try:
-                # Here you would verify the email exists in Supabase
-                user_check = supabase.table("login").select("id").eq("Email", email).execute()
-                if not user_check.data:
-                    flash('If this email is registered, a reset link has been sent.', 'success')
-                    return render_template("forgot_password.html")
+@app.route("/user-dashboard")
+@login_required
+def user_dashboard():
+    username = session.get("username")
+    return render_template("user_dashboard.html", username=username)
 
-                # Create reset token (simple example, use a secure token in production)
-                reset_token = str(uuid.uuid4())
-                reset_link = f"http://localhost:5000/reset-password/{reset_token}"
-
-                # Optionally, save token to Supabase with expiry time
-                # supabase.table("password_resets").insert({"email": email, "token": reset_token, "expires": datetime.now() + timedelta(hours=1)}).execute()
-
-                # Send email via Gmail API
-                email_body = f"""
-                <p>Hello,</p>
-                <p>Click the link below to reset your ScamGuard password:</p>
-                <p><a href="{reset_link}">{reset_link}</a></p>
-                <p>If you did not request this, please ignore this email.</p>
-                """
-                send_email(email, "ScamGuard Password Reset", email_body)
-                flash('If this email is registered, a reset link has been sent.', 'success')
-
-            except Exception as e:
-                print(f"Password reset error: {str(e)}")
-                flash('An error occurred while sending the reset email, please try again later.', 'error')
-    
-    return render_template("forgot_password.html")
-
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "").strip()
-        confirm_password = request.form.get("confirm_password", "").strip()
-        email = request.form.get("email", "").strip()
-        
-        # Validate input
-        if not username or not password or not email:
-            flash('All fields are required!', 'error')
-        elif len(password) < 6:
-            flash('Password must be at least 6 characters long!', 'error')
-        elif password != confirm_password:
-            flash('Passwords do not match!', 'error')
-        else:
-            try:
-                if supabase:
-                    # Check if username already exists
-                    user_check = supabase.table("login")\
-                        .select("Name")\
-                        .eq("Name", username)\
-                        .execute()
-                    
-                    if user_check.data:
-                        flash('Username already exists!', 'error')
-                        return render_template("register.html")
-                    
-                    # Check if email already exists
-                    email_check = supabase.table("login")\
-                        .select("Email")\
-                        .eq("Email", email)\
-                        .execute()
-                    
-                    if email_check.data:
-                        flash('Email already registered!', 'error')
-                        return render_template("register.html")
-                    
-                    # Create new user (insert into login table)
-                    new_user = {
-                        "Name": username,
-                        "Email": email,
-                        "Password": hash_password(password),
-                        "Permission_level": 0  # default permission level = normal user
-                    }
-                    
-                    response = supabase.table("login").insert(new_user).execute()
-                    
-                    if response.data:
-                        flash('Registration successful! Please log in.', 'success')
-                        print(f"✓ New user {username} registered in Supabase login table")
-                        return redirect(url_for('login'))
-                    else:
-                        flash('Registration failed, please try again later', 'error')
-                else:
-                    # In-memory storage
-                    if username in users:
-                        flash('Username already exists!', 'error')
-                    else:
-                        users[username] = {
-                            'id': str(len(users) + 1),
-                            'Name': username,
-                            'Password': hash_password(password),
-                            'Email': email,
-                            'Permission level': 0  # default permission level
-                        }
-                        flash('Registration successful! Please log in.', 'success')
-                        print(f"✓ New user {username} registered in in-memory storage")
-                        return redirect(url_for('login'))
-                        
-            except Exception as e:
-                print(f"Registration error: {str(e)}")
-                flash('An error occurred during registration, please try again later', 'error')
-    
-    return render_template("register.html")
-
-@app.route("/detection", methods=["GET", "POST"])
-def detection():
-    # Check if user is logged in
-    if 'user_id' not in session:
-        flash('Please log in first!', 'error')
-        return redirect(url_for('login'))
-    
-    result = None
-    if request.method == "POST":
-        user_input = request.form.get("job_text", "")
-        # Placeholder detection logic
-        result = f"Detection complete! Input text length: {len(user_input)} characters. Estimated scam probability: 25%"
-    
-    return render_template("detection.html", 
-                         username=session['username'], 
-                         result=result)
-
-@app.route("/logout")
-def logout():
-    username = session.get('username', 'Unknown user')
-    session.pop('user_id', None)
-    session.pop('username', None)
-    session.pop('permission_level', None)
-    flash('You have successfully logged out!', 'success')
-    print(f"✓ User {username} logged out")
-    return redirect(url_for('login'))
-
-# Test route to verify Supabase connection and login table data
-@app.route("/test-supabase")
-def test_supabase():
-    """Test page showing Supabase connection status and login table data"""
-    if not supabase:
-        return "❌ Supabase unavailable"
-    
+@app.route("/admin-dashboard")
+@admin_required
+def admin_dashboard():
     try:
-        # Get all users from login table
-        response = supabase.table("login").select("*").execute()
-        users = response.data
-        
-        # Build simple HTML output
-        html = f"""
-        <h1>Supabase Connection Test</h1>
-        <p>✅ Supabase connection successful!</p>
-        <p>📊 Number of users in login table: {len(users)}</p>
-        <h3>User list:</h3>
-        <table border="1" style="border-collapse: collapse;">
-            <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Password Hash</th>
-                <th>Permission Level</th>
-            </tr>
-        """
-        
-        for user in users:
-            html += f"""
-            <tr>
-                <td>{user.get('id', 'N/A')}</td>
-                <td>{user.get('Name', 'N/A')}</td>
-                <td>{user.get('Email', 'N/A')}</td>
-                <td>{user.get('Password', 'N/A')[:20]}...</td>
-                <td>{user.get('Permission_level', 'N/A')}</td>
-            </tr>
-            """
-        
-        html += "</table>"
-        html += '<p><a href="/">Return to Home</a></p>'
-        
-        return html
-        
+        if supabase:
+            response = supabase.table("login").select("id, Name, Email, Permission_level").execute()
+            users_list = response.data
+        else:
+            users_list = []
+        return render_template("admin_dashboard.html", users=users_list)
     except Exception as e:
-        return f"❌ Failed to query Supabase login table: {str(e)}"
+        flash(f"Error loading admin dashboard: {e}", "error")
+        return redirect(url_for("dashboard"))
 
+# ------------------ Load Model & Data ------------------
+BASE_DIR = os.path.dirname(__file__)
+DATA_PATH = os.path.join(BASE_DIR, "data")
+MODELS_PATH = os.path.join(BASE_DIR, "models")
+MODEL_PATH = os.path.join(MODELS_PATH, "model.pkl")
+VECTORIZER_PATH = os.path.join(MODELS_PATH, "tfidf_vectorizer.pkl")
+ENGINEERED_PATH = os.path.join(DATA_PATH, "engineered_features.csv")
+
+with open(VECTORIZER_PATH, "rb") as f:
+    tfidf_vectorizer = pickle.load(f)
+with open(MODEL_PATH, "rb") as f:
+    model = pickle.load(f)
+
+engineered_df = pd.read_csv(ENGINEERED_PATH)
+engineered_cols = [c for c in engineered_df.columns if c != "fraudulent"]
+
+cat_cols = [
+    "title", "location", "department", "salary_range",
+    "company_profile", "description", "requirements", "benefits",
+    "employment_type", "required_experience", "required_education",
+    "industry", "function"
+]
+
+label_encoders = {}
+for col in cat_cols:
+    le = LabelEncoder()
+    engineered_df[col] = engineered_df[col].astype(str).fillna("Unknown")
+    engineered_df[col] = le.fit_transform(engineered_df[col])
+    label_encoders[col] = le
+
+# ------------------ Helper Functions ------------------
+def parse_job_posting(text: str):
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    full_text = "\n".join(lines)
+    title = lines[0] if lines else " ".join(text.split()[:5])
+    def extract_section(keyword: str, block: str):
+        import re
+        m = re.search(rf"{keyword}\s*[:\-]\s*(.*?)(?=\n[A-Z][A-Za-z ]+:\s*|\Z)", block, re.IGNORECASE | re.DOTALL)
+        return m.group(1).strip() if m else ""
+    company_profile = extract_section("Company", full_text)
+    description = extract_section("Description", full_text)
+    requirements = extract_section("Requirements", full_text)
+    benefits = extract_section("Benefits", full_text)
+    return title, company_profile, description, requirements, benefits
+
+def make_engineered_vector(title, company_profile, description, requirements, benefits):
+    row = {c: 0 for c in engineered_cols}
+    desc = str(description or "").strip()
+    words = desc.split()
+    row["char_count"] = len(desc)
+    row["word_count"] = len(words)
+    row["avg_word_length"] = (sum(len(w) for w in words)/len(words)) if words else 0
+    row["num_exclamations"] = desc.count("!")
+    row["num_dollar"] = desc.count("$")
+    row["num_uppercase_words"] = sum(1 for w in words if w.isupper() and len(w)>1)
+    sentences = [s.strip() for s in re.split(r"[.!?]", desc) if s.strip()]
+    row["avg_sentence_length"] = (sum(len(s.split()) for s in sentences)/len(sentences)) if sentences else 0
+    row["spelling_errors"] = 0.0
+    row["has_company_profile"] = int(bool(company_profile))
+    row["has_requirements"] = int(bool(requirements))
+    row["has_benefits"] = int(bool(benefits))
+
+    df_row = pd.DataFrame([{**row,
+                            "title": title or "Unknown",
+                            "company_profile": company_profile or "Unknown",
+                            "description": desc or "Unknown",
+                            "requirements": requirements or "Unknown",
+                            "benefits": benefits or "Unknown"}])
+    for col, le in label_encoders.items():
+        if col in df_row.columns:
+            df_row[col] = df_row[col].astype(str).replace("", "Unknown")
+            df_row[col] = df_row[col].apply(lambda x: le.transform([x])[0] if x in le.classes_ else 0)
+    df_row = df_row[engineered_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    return df_row.values.flatten().astype(float)
+
+# ------------------ Prediction Page ------------------
+@app.route("/index", methods=["GET", "POST"])
+@login_required
+def index():
+    prediction, confidence, input_text, error_message = None, None, None, None
+    if request.method == "POST":
+        raw_text = request.form.get("job_posting", "").strip()
+        input_text = raw_text
+        if not raw_text:
+            error_message = "Please paste a job posting first."
+            return render_template("index.html", error_message=error_message)
+
+        title, company_profile, description, requirements, benefits = parse_job_posting(raw_text)
+        engineered_vec = make_engineered_vector(title, company_profile, description, requirements, benefits)
+        combined_text = " ".join([title, company_profile, description, requirements, benefits])
+        X_tfidf = tfidf_vectorizer.transform([combined_text]).toarray()[0]
+        combined = np.concatenate([engineered_vec, X_tfidf]).reshape(1, -1)
+        pred = int(model.predict(combined)[0])
+        try:
+            p_fake = float(model.predict_proba(combined)[0][1])
+            THRESHOLD_FAKE = 0.40
+            pred = 1 if p_fake >= THRESHOLD_FAKE else 0
+            confidence = round((p_fake if pred else 1 - p_fake)*100,2)
+        except:
+            confidence = None
+        prediction = "⚠️ Fake Job Posting" if pred else "✅ Real Job Posting"
+
+    return render_template("index.html", prediction=prediction, confidence=confidence,
+                           input_text=input_text, error_message=error_message)
+
+# ------------------ Health Check ------------------
+@app.route("/health")
+def health():
+    return {"status": "ok"}
+
+# ------------------ Run ------------------
 if __name__ == "__main__":
-    print("=" * 50)
-    print("ScamGuard Flask App starting...")
-    print("=" * 50)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True)
