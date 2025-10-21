@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <style>
+        body { font-family: Arial; background: #f5f5f5; padding: 40px; }
+        .container { background: white; border-radius: 10px; padding: 30px; width: 80%; margin: auto; }
+        h1 { color: #2b4b9b; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        a { color: #007bff; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>👑 Admin Dashboard</h1>
+        <p>Welcome, <b>{{ username }}</b>!</p>
+        <p>Here you can manage users, view logs, or access system reports.</p>
+
+        <hr>
+        <h3>🧍 User List (Example)</h3>
+        <table>
+            <tr><th>ID</th><th>Name</th><th>Email</th><th>Permission</th></tr>
+            <tr><td>1</td><td>admin</td><td>admin@example.com</td><td>Admin</td></tr>
+            <tr><td>2</td><td>test</td><td>test@example.com</td><td>User</td></tr>
+        </table>
+
+        <p><a href="/">Go to Job Scanner</a> | <a href="/logout">Logout</a></p>
+    </div>
+</body>
+</html>
