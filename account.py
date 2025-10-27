@@ -34,7 +34,7 @@ def edit_account():
         user_resp = supabase.table("login").select("Name, Email").eq("id", user_id).execute()
         if not user_resp.data:
             flash("User not found!", "error")
-            return redirect(url_for("index"))
+            return redirect(url_for("check_job"))
 
         user = user_resp.data[0]
 
@@ -71,4 +71,62 @@ def edit_account():
 
     except Exception as e:
         flash(f"Error: {e}", "error")
-        return redirect(url_for("index"))
+        return redirect(url_for("check_job"))
+    
+# ------------------ 管理员编辑任意用户 ------------------
+@account.route("/edit/<int:user_id>", methods=["GET", "POST"])
+@login_required
+def edit_user(user_id):
+    # 确认是管理员
+    if int(session.get("permission_level", 0)) < 1:
+        flash("Access denied: admin privileges required.", "error")
+        return redirect(url_for("dashboard"))
+
+    supabase = auth_module.supabase
+    if not supabase:
+        flash("Supabase not initialized!", "error")
+        return redirect(url_for("auth.login"))
+
+    try:
+        # 获取被编辑的用户信息
+        user_resp = supabase.table("login").select("id, Name, Email, Permission_level").eq("id", user_id).execute()
+        if not user_resp.data:
+            flash("User not found!", "error")
+            return redirect(url_for("admin_dashboard"))
+
+        user = user_resp.data[0]
+
+        # 管理员不能编辑其他管理员
+        if user["Permission_level"] >= 1:
+            flash("Admin accounts cannot be edited.", "info")
+            return redirect(url_for("admin_dashboard"))
+
+        if request.method == "POST":
+            new_name = request.form.get("username", "").strip()
+            new_email = request.form.get("email", "").strip()
+            new_permission = int(request.form.get("permission_level", "0"))
+            new_password = request.form.get("password", "").strip()
+
+            updates = {}
+            if new_name and new_name != user.get("Name"):
+                updates["Name"] = new_name
+            if new_email and new_email != user.get("Email"):
+                updates["Email"] = new_email
+            if new_permission != user.get("Permission_level"):
+                updates["Permission_level"] = new_permission
+            if new_password:
+                updates["Password"] = hash_password(new_password)
+
+            if updates:
+                supabase.table("login").update(updates).eq("id", user_id).execute()
+                flash("User updated successfully!", "success")
+            else:
+                flash("No changes detected.", "info")
+
+            return redirect(url_for("admin_dashboard"))
+
+        return render_template("edit_user.html", user=user)
+
+    except Exception as e:
+        flash(f"Error: {e}", "error")
+        return redirect(url_for("admin_dashboard"))

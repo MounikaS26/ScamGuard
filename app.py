@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
-import os, re, pickle, pandas as pd, numpy as np
+import os, re, pickle, warnings, pandas as pd, numpy as np
 from dotenv import load_dotenv
 from sklearn.preprocessing import LabelEncoder
 from functools import wraps
@@ -59,7 +59,7 @@ def admin_required(f):
 @app.route("/")
 def home():
     if 'user_id' in session:
-        return redirect(url_for("index"))
+        return redirect(url_for("check_job"))
     return redirect(url_for("auth.login"))
 
 @app.route("/dashboard")
@@ -70,11 +70,13 @@ def dashboard():
         return redirect(url_for("admin_dashboard"))
     return redirect(url_for("user_dashboard"))
 
+
 @app.route("/user-dashboard")
 @login_required
 def user_dashboard():
     username = session.get("username")
     return render_template("user_dashboard.html", username=username)
+
 
 @app.route("/admin-dashboard")
 @admin_required
@@ -89,6 +91,38 @@ def admin_dashboard():
     except Exception as e:
         flash(f"Error loading admin dashboard: {e}", "error")
         return redirect(url_for("dashboard"))
+
+
+# ------------------ History Page ------------------
+@app.route("/history")
+@login_required
+def history():
+    """显示用户查询历史"""
+    try:
+        if supabase:
+            # 获取最近10天的记录
+            response = supabase.table("prediction_history")\
+                .select("*")\
+                .eq("user_id", session["user_id"])\
+                .order("created_at", desc=True)\
+                .execute()
+            
+            history_list = response.data
+        else:
+            history_list = []
+        
+        return render_template("history.html", history=history_list)
+    
+    except Exception as e:
+        flash(f"Error loading history: {e}", "error")
+        return redirect(url_for("user_dashboard"))
+
+# ------------------ Anti Scam Tips Page ------------------
+@app.route("/anti-scam-tips")
+@login_required
+def anti_scam_tips():
+    """防骗知识页面"""
+    return render_template("anti_scam_tips.html")
 
 # ------------------ Load Model & Data ------------------
 BASE_DIR = os.path.dirname(__file__)
@@ -166,34 +200,52 @@ def make_engineered_vector(title, company_profile, description, requirements, be
     return df_row.values.flatten().astype(float)
 
 # ------------------ Prediction Page ------------------
-@app.route("/index", methods=["GET", "POST"])
+@app.route("/check-job", methods=["GET", "POST"])
 @login_required
-def index():
+def check_job():
     prediction, confidence, input_text, error_message = None, None, None, None
     if request.method == "POST":
         raw_text = request.form.get("job_posting", "").strip()
         input_text = raw_text
         if not raw_text:
             error_message = "Please paste a job posting first."
-            return render_template("index.html", error_message=error_message)
+            return render_template("check_job.html", error_message=error_message)
 
         title, company_profile, description, requirements, benefits = parse_job_posting(raw_text)
         engineered_vec = make_engineered_vector(title, company_profile, description, requirements, benefits)
         combined_text = " ".join([title, company_profile, description, requirements, benefits])
         X_tfidf = tfidf_vectorizer.transform([combined_text]).toarray()[0]
         combined = np.concatenate([engineered_vec, X_tfidf]).reshape(1, -1)
-        pred = int(model.predict(combined)[0])
-        try:
-            p_fake = float(model.predict_proba(combined)[0][1])
-            THRESHOLD_FAKE = 0.40
-            pred = 1 if p_fake >= THRESHOLD_FAKE else 0
-            confidence = round((p_fake if pred else 1 - p_fake)*100,2)
-        except:
-            confidence = None
-        prediction = "⚠️ Fake Job Posting" if pred else "✅ Real Job Posting"
+        
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            pred = int(model.predict(combined)[0])
+            try:
+                p_fake = float(model.predict_proba(combined)[0][1])
+                THRESHOLD_FAKE = 0.40
+                pred = 1 if p_fake >= THRESHOLD_FAKE else 0
+                confidence = round((p_fake if pred else 1 - p_fake)*100, 2)
+            except:
+                confidence = None
+        
+        prediction_result_text = "⚠️ Fake Job Posting" if pred else "✅ Real Job Posting"
+        prediction = prediction_result_text
 
-    return render_template("index.html", prediction=prediction, confidence=confidence,
+        try:
+            if supabase:
+                supabase.table("prediction_history").insert({
+                    "user_id": session["user_id"],
+                    "input_text": raw_text[:500] + "..." if len(raw_text) > 500 else raw_text,
+                    "prediction_result": prediction_result_text,
+                    "confidence": confidence
+                }).execute()
+                print("✓ Prediction history saved successfully")
+        except Exception as e:
+            print(f"Error saving prediction history: {e}")
+
+    return render_template("check_job.html", prediction=prediction, confidence=confidence,
                            input_text=input_text, error_message=error_message)
+
 
 # ------------------ Health Check ------------------
 @app.route("/health")

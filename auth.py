@@ -51,7 +51,11 @@ def login():
                 session["permission_level"] = int(user.get("Permission_level", 0))  
                 flash(f"Welcome back, {user['Name']}!", "success")
                 print(f"DEBUG: Login successful for user '{username}'")
-                return redirect(url_for("index"))  
+                if session["permission_level"] >= 1:  
+                     return redirect(url_for("admin_dashboard"))
+                else:
+                     return redirect(url_for("user_dashboard"))
+
             else:
                 flash("Incorrect password!", "error")
                 print(f"DEBUG: Password mismatch for user '{username}'")
