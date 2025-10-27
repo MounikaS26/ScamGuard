@@ -1,31 +1,139 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Admin Dashboard</title>
-    <style>
-        body { font-family: Arial; background: #f5f5f5; padding: 40px; }
-        .container { background: white; border-radius: 10px; padding: 30px; width: 80%; margin: auto; }
-        h1 { color: #2b4b9b; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-        a { color: #007bff; text-decoration: none; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>👑 Admin Dashboard</h1>
-        <p>Welcome, <b>{{ username }}</b>!</p>
-        <p>Here you can manage users, view logs, or access system reports.</p>
+{% extends "base.html" %}
+{% block title %}Admin Dashboard - ScamGuard{% endblock %}
+{% block content %}
+<div class="card">
+  <h1 class="center">Admin Dashboard 👑</h1>
+  <p class="sub center">Manage users and monitor system activity.</p>
 
-        <hr>
-        <h3>🧍 User List (Example)</h3>
-        <table>
-            <tr><th>ID</th><th>Name</th><th>Email</th><th>Permission</th></tr>
-            <tr><td>1</td><td>admin</td><td>admin@example.com</td><td>Admin</td></tr>
-            <tr><td>2</td><td>test</td><td>test@example.com</td><td>User</td></tr>
-        </table>
+  <!-- 顶部按钮 -->
+  <div class="button-grid" style="margin-top: 1.5rem;">
+    <a href="{{ url_for('check_job') }}" class="btn btn-primary">🧠 Go to Job Detector</a>
+  </div>
 
-        <p><a href="/">Go to Job Scanner</a> | <a href="/logout">Logout</a></p>
-    </div>
-</body>
-</html>
+  <h3 class="center" style="margin-top: 2rem;">Registered Users</h3>
+
+  <div class="table-container" style="overflow-x: auto; margin-top: 1rem;">
+    <table class="styled-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr class="user-row">
+          <td>{{ user.id }}</td>
+          <td>{{ user.Name }}</td>
+          <td>{{ user.Email }}</td>
+          <td>
+            {% if user.Permission_level|int >= 1 %}
+              <span class="role-admin">Admin</span>
+            {% else %}
+              <span class="role-user">User</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if user.Permission_level|int >= 1 %}
+              <span class="text-muted">🔒 Not Editable</span>
+            {% else %}
+              <a href="{{ url_for('account.edit_user', user_id=user.id) }}" class="btn btn-sm btn-primary">✏️ Edit</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="center muted">No users found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination Controls -->
+  <div id="pagination" class="center" style="margin-top: 1.5em;"></div>
+</div>
+
+<style>
+/* 表格统一风格 */
+.styled-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  font-size: 0.95rem;
+}
+
+.styled-table th, .styled-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.styled-table thead {
+  background-color: var(--primary, #007bff);
+  color: #fff;
+}
+
+.styled-table tbody tr:nth-child(even) {
+  background-color: var(--bg2, #f9fafb);
+}
+
+.role-admin {
+  color: var(--primary, #007bff);
+  font-weight: 600;
+}
+
+.role-user {
+  color: var(--success, #28a745);
+  font-weight: 600;
+}
+
+/* 按钮小样式 */
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+  border-radius: 0.375rem;
+}
+
+/* 分页按钮 */
+#pagination button {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+</style>
+
+<script>
+const rowsPerPage = 5;
+const rows = Array.from(document.querySelectorAll(".user-row"));
+const pagination = document.getElementById("pagination");
+const totalPages = Math.ceil(rows.length / rowsPerPage);
+
+function renderPage(page) {
+  rows.forEach((row, i) => {
+    row.style.display = (i >= (page - 1) * rowsPerPage && i < page * rowsPerPage) ? "" : "none";
+  });
+  renderPagination(page);
+}
+
+function renderPagination(page) {
+  pagination.innerHTML = "";
+  if (totalPages <= 1) return;
+
+  for (let i = 1; i <= totalPages; i++) {
+    const btn = document.createElement("button");
+    btn.textContent = i;
+    btn.className = "btn btn-sm " + (i === page ? "btn-primary" : "btn-muted");
+    btn.style.margin = "0 4px";
+    btn.onclick = () => renderPage(i);
+    pagination.appendChild(btn);
+  }
+}
+
+renderPage(1);
+</script>
+{% endblock %}

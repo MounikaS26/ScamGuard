@@ -13,7 +13,10 @@
   <!-- Navbar -->
   <header class="nav-wrap">
     <nav class="nav">
-      <a class="brand" href="{{ url_for('index') }}">🛡️ ScamGuard</a>
+      <a class="brand" href="{% if session.get('permission_level', 0) >= 1 %}{{ url_for('admin_dashboard') }}{% else %}{{ url_for('user_dashboard') }}{% endif %}">
+        🛡️ ScamGuard
+      </a>
+
 
       <!-- Mobile menu toggle -->
       <input id="nav-toggle" type="checkbox" />
@@ -22,7 +25,12 @@
       </label>
 
       <ul class="nav-links">
-        <li><a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">Home</a></li>
+      <li>
+        <a href="{% if session.get('permission_level', 0) >= 1 %}{{ url_for('admin_dashboard') }}{% else %}{{ url_for('user_dashboard') }}{% endif %}"
+          class="{% if request.endpoint in ['user_dashboard', 'admin_dashboard'] %}active{% endif %}">Dashboard
+        </a>
+      </li>
+
 
         {% if session.user_id %}
           <!-- Authenticated -->
