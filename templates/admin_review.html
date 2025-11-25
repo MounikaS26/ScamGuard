@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Admin Review – ScamGuard{% endblock %}
+
+{% block content %}
+
+<style>
+.review-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+}
+
+.review-header h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #222;
+}
+
+.review-count {
+    background: #ffdd57;
+    color: #8a6d00;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.review-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 20px;
+}
+
+.review-card {
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-left: 5px solid #ffcd38;
+    transition: 0.2s ease;
+}
+
+.review-card:hover {
+    transform: translateY(-2px);
+}
+
+.label-tag {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.label-yellow {
+    background: #ffed9c;
+    color: #7a5a00;
+}
+
+.card-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.card-desc {
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.card-meta {
+    font-size: 12px;
+    margin-bottom: 12px;
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.btn-review {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.btn-real {
+    background: #d4f7d0;
+    color: #177a0a;
+}
+
+.btn-fake {
+    background: #ffd2d2;
+    color: #a11a1a;
+}
+
+.toggle-raw {
+    background: none;
+    border: 0;
+    color: #007bff;
+    cursor: pointer;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.raw-text {
+    display: none;
+    white-space: pre-wrap;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 13px;
+    margin-top: 8px;
+    border: 1px solid #e1e1e1;
+}
+</style>
+
+<div class="review-header">
+    <h1>🛠️ Admin – Needs Review Queue</h1>
+    <div class="review-count">
+        {{ items|length }} Pending Reviews
+    </div>
+</div>
+
+{% if items|length == 0 %}
+<div style="padding:20px; border-radius:10px; text-align:center;">
+    <h3>No items need review 🎉</h3>
+    <p>All predictions are currently resolved.</p>
+</div>
+{% endif %}
+
+<div class="review-grid">
+
+{% for item in items %}
+    <div class="review-card">
+
+        <span class="label-tag label-yellow">Needs Review</span>
+
+        <h3 class="card-title">{{ item.title }}</h3>
+        <p class="card-desc">{{ item.desc }}</p>
+
+        <div class="card-meta">
+            <b>User:</b> {{ item.user_id }} <br>
+            <b>Confidence:</b> {{ item.confidence or 'N/A' }}% <br>
+            <b>Date:</b> {{ item.created_at|format_datetime }}
+        </div>
+
+        <!-- Toggle raw text -->
+        <button class="toggle-raw" onclick="toggleRaw({{ item.id }})">
+            View Full Text
+        </button>
+
+        <div id="raw-{{ item.id }}" class="raw-text">
+            {{ item.raw }}
+        </div>
+
+        <div class="actions">
+            <form method="POST" action="/admin/review/{{ item.id }}/set-real">
+                <button class="btn-review btn-real" type="submit">Mark Real</button>
+            </form>
+
+            <form method="POST" action="/admin/review/{{ item.id }}/set-fake">
+                <button class="btn-review btn-fake" type="submit">Mark Fake</button>
+            </form>
+        </div>
+    </div>
+{% endfor %}
+
+</div>
+
+<script>
+function toggleRaw(id) {
+    const box = document.getElementById("raw-" + id);
+    box.style.display = box.style.display === "block" ? "none" : "block";
+}
+</script>
+
+{% endblock %}

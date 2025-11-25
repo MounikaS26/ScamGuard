@@ -1,0 +1,7 @@
+# Python cache / env
+__pycache__/
+.venv/
+env/
+
+# Big data files
+*.csv
