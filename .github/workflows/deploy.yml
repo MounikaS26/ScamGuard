@@ -1,0 +1,26 @@
+name: Deploy to Cassini
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy to Cassini
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.CASSINI_HOST }}
+          username: ${{ secrets.CASSINI_USER }}
+          key: ${{ secrets.CASSINI_PRIVATE_KEY }}
+          script: |
+            cd ~/web/ScamGuard
+            git pull
+            pip install --user -r requirements.txt
+            screen -S scamguard -X quit || true
+            screen -dmS scamguard bash -c "python app.py"
