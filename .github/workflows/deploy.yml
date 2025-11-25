@@ -20,6 +20,8 @@ jobs:
           key: ${{ secrets.CASSINI_PRIVATE_KEY }}
           script: |
             cd ~/web/ScamGuard
+            git fetch --all
+            git reset --hard origin/main
             git pull
             pip install --user -r requirements.txt
             screen -S scamguard -X quit || true
