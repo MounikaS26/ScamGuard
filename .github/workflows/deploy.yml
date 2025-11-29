@@ -11,6 +11,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          lfs: true   # IMPORTANT: fetch LFS files instead of pointers
+
+      - name: Install Git LFS
+        run: |
+          git lfs install
+          git lfs pull
 
       - name: Deploy to Cassini
         uses: appleboy/ssh-action@v0.1.7
@@ -23,6 +30,7 @@ jobs:
             git fetch --all
             git reset --hard origin/main
             git pull
+            git lfs pull        # <-- DOWNLOAD THE LARGE CSV ON CASSINI
             pip install --user -r requirements.txt
             screen -S scamguard -X quit || true
             screen -dmS scamguard bash -c "python app.py"
