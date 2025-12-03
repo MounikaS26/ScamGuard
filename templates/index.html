@@ -178,4 +178,17 @@
     document.querySelectorAll('.result').forEach(el => el.remove());
   }
 </script>
+
+<script>
+  const reviewModal = document.getElementById("review-modal");
+  const dismissBtn = document.getElementById("dismiss-review");
+
+  if (reviewModal) {
+    reviewModal.style.display = "flex";
+
+    dismissBtn?.addEventListener("click", () => {
+      reviewModal.style.display = "none";
+    });
+  }
+</script>
 {% endblock %}
