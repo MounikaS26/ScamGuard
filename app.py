@@ -7,7 +7,7 @@ from datetime import datetime
 from supabase import create_client
 from scipy.sparse import hstack, csr_matrix
 from data.text_extractor import extract_job_features
-from data.db import init_db, insert_log, fetch_logs, delete_log, get_admin_stats
+from data.db import init_db, insert_log, fetch_logs, delete_log, get_admin_stats, save_review_context
 
 # db helpers
 from data.db import (
@@ -221,7 +221,6 @@ if not models:
 print(f"[Voting] Loaded models: {list(models.keys())}")
 print(f"[Voting] Weights: {VOTE_WEIGHTS.tolist()} | Threshold: {DEFAULT_THRESHOLD}")
 
-# --- Load current engineered DF (for medians if needed) ---
 engineered_df = pd.read_csv(ENGINEERED_PATH)
 
 # ========================= Helpers =========================
@@ -346,6 +345,8 @@ def index():
     input_text = None
     error_message = None
     extracted = None
+    log_id_for_review = None
+
     per_model = {}
     final_proba = None  # probability of "fake" from the ensemble
     if request.method == "POST":
@@ -386,13 +387,15 @@ def index():
                  # persist the log
                 user_id = session.get("user_id", "anonymous")
                 excerpt = (input_text or "").strip().replace("\n", " ")
-                insert_log(
+                log_id = insert_log(
                   user_id=user_id,
                   text_excerpt=input_text,
                   prediction_label=stored_label,
                   confidence=(float(confidence) if confidence is not None else None),
                   was_needs_review=(1 if label == "Needs Review" else 0)
                 )
+                if needs_review:
+                 log_id_for_review = log_id
 
             except Exception as e:
                 import traceback; traceback.print_exc()
@@ -410,9 +413,16 @@ def index():
         ensemble_threshold=DEFAULT_THRESHOLD,
         review_band=REVIEW_BAND,
         extracted=extracted,
+        log_id_for_review=log_id_for_review,
     )
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/info", methods=["GET", "POST"])
+def info():
+    return render_template(
+        "info.html"
+    )
+
+@app.route("/playground", methods=["GET", "POST"])
 def playground():
     prediction = None
     confidence = None
@@ -466,30 +476,20 @@ def playground():
 
 def extract_title_and_desc(excerpt: str):
     txt = (excerpt or "").strip()
-    title = ""
-    desc = ""
-    title_marker = "title:"
-    desc_marker = "description:"
-    lower = txt.lower()
+    if not txt:
+        return "(empty)", ""
 
-    if title_marker in lower:
-        t_start = lower.index(title_marker) + len(title_marker)
-        t_end = lower.find(desc_marker, t_start)
-        if t_end == -1:
-            t_end = len(txt)
-        title = txt[t_start:t_end].strip(" -:•|").strip()
+    lines = txt.splitlines()
 
-    if desc_marker in lower:
-        d_start = lower.index(desc_marker) + len(desc_marker)
-        desc = txt[d_start:].strip(" -:•|").strip()
+    # First line is the title
+    title = lines[0].strip()
 
-    if not title:
-        title = txt.split("\n")[0].strip()
-        if len(title) > 90:
-            title = title[:90].rstrip() + "…"
-    if not desc:
-        rest = txt[len(title):].strip() if len(txt) > len(title) else ""
-        desc = rest[:240].rstrip() + ("…" if len(rest) > 240 else "")
+    # Everything else is description (joined back with newlines)
+    if len(lines) > 1:
+        desc = "\n".join(lines[1:]).strip()
+    else:
+        desc = ""
+
     return title, desc
 
 @app.post("/logs/<int:log_id>/delete")
@@ -512,25 +512,16 @@ def logs():
     items = []
     for r in rows:
         title, desc = extract_title_and_desc(r["text_excerpt"])
-
-        # base label directly from DB
-        base_label = (r["prediction_label"] or "").strip().title()
-
-        # 0/1 flag: this entry was originally flagged as "Needs Review"
-        was_review = int(r["was_needs_review"]) if "was_needs_review" in r.keys() else 0
-
-        # 👇 Do NOT override the base label anymore
-        label = base_label          # final label shown in the main badge
-
+        label = (r["prediction_label"] or "").strip().title()
         items.append({
             "id": r["id"],
             "title": title,
-            "desc": desc,
-            "raw": r["text_excerpt"],
-            "label": label,                     # used by badge + filters
+            "desc": desc,                 # not used in template right now, but ok
+            "raw": r["text_excerpt"],     # full text
+            "label": label,
             "confidence": r["confidence"],
             "created_at": r["created_at"],
-            "was_needs_review": was_review,     # controls "Previously: Needs Review" pill
+            "was_needs_review": r["was_needs_review"] if "was_needs_review" in r.keys() else 0,
         })
 
     return render_template("logs.html", items=items)
@@ -579,7 +570,8 @@ def admin_review():
     from data.db import get_db
     with get_db() as conn:
         cur = conn.execute("""
-            SELECT id, user_id, text_excerpt, prediction_label, confidence, created_at, was_needs_review
+            SELECT id, user_id, text_excerpt, prediction_label,
+                   confidence, created_at, was_needs_review
             FROM prediction_logs
             WHERE prediction_label = 'Needs Review'
             ORDER BY id DESC
@@ -588,15 +580,25 @@ def admin_review():
 
     items = []
     for r in rows:
-        txt = r["text_excerpt"]
-        title = txt.split(".")[0][:80] + "…" if len(txt) > 80 else txt
-        desc = txt[:200] + ("…" if len(txt) > 200 else "")
+        txt = r["text_excerpt"] or ""
+        # Title = first line, or first 80 chars
+        first_line = txt.splitlines()[0].strip()
+        if len(first_line) > 80:
+            title = first_line[:80].rstrip() + "…"
+        else:
+            title = first_line
+
+        # Short preview (first 220 chars)
+        preview = txt[:220].rstrip()
+        if len(txt) > 220:
+            preview += "…"
+
         items.append({
             "id": r["id"],
             "user_id": r["user_id"],
             "title": title,
-            "desc": desc,
-            "raw": r["text_excerpt"],
+            "desc": preview,       # short preview only
+            "raw": txt,            # full text
             "confidence": r["confidence"],
             "created_at": r["created_at"],
         })
@@ -623,6 +625,7 @@ def admin_mark_fake(log_id):
     flash("Marked as Fake.", "success")
     return redirect(url_for("admin_review"))
 
+from data.db import save_review_context  # add to imports at top
 
 # ========================= Health =========================
 @app.route("/health")
@@ -630,6 +633,11 @@ def health():
     return {"status": "ok"}
 
 # ========================= Init =========================
+
+@app.route("/")
+def landing():
+    return render_template("home.html")
+
 init_db()
 
 if __name__ == "__main__":

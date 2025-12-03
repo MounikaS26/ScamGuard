@@ -1,10 +1,9 @@
 # data/db.py
 import sqlite3, os, datetime
 
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # project root
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "scamguard.db")
-
 os.makedirs(DATA_DIR, exist_ok=True)
 
 def get_db():
@@ -12,9 +11,16 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _ensure_column(conn, name: str, type_sql: str):
+    """Best-effort: add column if it doesn't already exist."""
+    try:
+        conn.execute(f"ALTER TABLE prediction_logs ADD COLUMN {name} {type_sql}")
+    except sqlite3.OperationalError:
+        # column already exists or table missing (created below)
+        pass
+
 def init_db():
     with get_db() as conn:
-        # Create table if it doesn't exist (new schema already includes was_needs_review)
         conn.execute("""
         CREATE TABLE IF NOT EXISTS prediction_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,21 +29,22 @@ def init_db():
             prediction_label TEXT NOT NULL,
             confidence REAL,
             was_needs_review INTEGER DEFAULT 0,
+            review_source TEXT,
+            review_pay_fee TEXT,
+            review_personal_info TEXT,
+            review_notes TEXT,
             created_at TEXT NOT NULL
         )
         """)
-
-        # If the DB was created earlier without was_needs_review, add it
-        try:
-            conn.execute(
-                "ALTER TABLE prediction_logs "
-                "ADD COLUMN was_needs_review INTEGER DEFAULT 0"
-            )
-        except sqlite3.OperationalError:
-            # Column already exists → ignore
-            pass
-
+        # in case table existed from older version → make sure new columns exist
+        _ensure_column(conn, "was_needs_review", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "review_source", "TEXT")
+        _ensure_column(conn, "review_pay_fee", "TEXT")
+        _ensure_column(conn, "review_personal_info", "TEXT")
+        _ensure_column(conn, "review_notes", "TEXT")
         conn.commit()
+
+MAX_EXCERPT_LEN = None  # now we want full text; set a number if you later want to cap
 
 def insert_log(
     user_id: str,
@@ -45,16 +52,22 @@ def insert_log(
     prediction_label: str,
     confidence: float | None,
     was_needs_review: int = 0
-):
+) -> int:
+    """Insert a prediction and return its log_id."""
     if not text_excerpt:
         text_excerpt = "(empty)"
-    text_excerpt = text_excerpt.strip().replace("\x00","")[:250]  # safety + limit
+    text_excerpt = text_excerpt.strip().replace("\x00", "")
+
+    if MAX_EXCERPT_LEN:
+        text_excerpt = text_excerpt[:MAX_EXCERPT_LEN]
+
     ts = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
     with get_db() as conn:
-        conn.execute("""
+        cur = conn.execute("""
             INSERT INTO prediction_logs
-                (user_id, text_excerpt, prediction_label, confidence, was_needs_review, created_at)
+                (user_id, text_excerpt, prediction_label, confidence,
+                 was_needs_review, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             str(user_id),
@@ -64,6 +77,25 @@ def insert_log(
             int(was_needs_review),
             ts
         ))
+        conn.commit()
+        return cur.lastrowid
+
+def save_review_context(
+    log_id: int,
+    source: str,
+    pay_fee: str,
+    personal_info: str,
+    notes: str
+):
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE prediction_logs
+            SET review_source = ?,
+                review_pay_fee = ?,
+                review_personal_info = ?,
+                review_notes = ?
+            WHERE id = ?
+        """, (source, pay_fee, personal_info, notes, int(log_id)))
         conn.commit()
 
 def fetch_logs(user_id: str, limit: int = 200):
