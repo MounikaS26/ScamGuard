@@ -18,9 +18,6 @@ All functions are rule-based, explainable, and upgrade-friendly.
 
 import re
 
-# =========================
-# 1. POSITION / TITLE
-# =========================
 def extract_position(text: str) -> str:
     if not text.strip():
         return "Unknown"
@@ -31,20 +28,17 @@ def extract_position(text: str) -> str:
 
     first = lines[0]
 
-    # Try to split common separators
     for sep in ["–", "-", "|", ":"]:
         if sep in first:
             first = first.split(sep)[0].strip()
             break
 
-    # If the title contains job-like words
     job_words = ["assistant", "specialist", "engineer", "developer",
                  "manager", "entry", "clerk", "data entry", "analyst",
                  "representative", "remote"]
     if any(w in first.lower() for w in job_words):
         return first.title()
 
-    # try fallback: search for common job keywords in whole text
     m = re.search(r"(data entry|assistant|customer service|analyst|manager|developer)", 
                   text, re.IGNORECASE)
     if m:
@@ -52,10 +46,6 @@ def extract_position(text: str) -> str:
 
     return first.title()
 
-
-# =========================
-# 2. REMOTE
-# =========================
 def extract_remote_flag(text: str) -> str:
     t = text.lower()
     remote_keywords = [
@@ -72,10 +62,6 @@ def extract_remote_flag(text: str) -> str:
 
     return "Unknown"
 
-
-# =========================
-# 3. SALARY
-# =========================
 SALARY_PATTERN = re.compile(
     r"([$€£]\s?\d+(?:[,\d]{3})*(?:\.\d+)?\s*(?:k|per\s+\w+|/\w+|a\s+\w+|daily|hour|month|year)?)",
     re.IGNORECASE
@@ -85,10 +71,6 @@ def extract_salary(text: str) -> str:
     m = SALARY_PATTERN.search(text)
     return m.group(1).strip() if m else "Unknown"
 
-
-# =========================
-# 4. EMPLOYMENT TYPE
-# =========================
 def extract_employment_type(text: str) -> str:
     t = text.lower()
     if "full-time" in t or "full time" in t:
@@ -101,10 +83,6 @@ def extract_employment_type(text: str) -> str:
         return "Internship"
     return "Unknown"
 
-
-# =========================
-# 5. EXPERIENCE LEVEL
-# =========================
 def extract_experience(text: str) -> str:
     t = text.lower()
 
@@ -119,10 +97,6 @@ def extract_experience(text: str) -> str:
 
     return "Unknown"
 
-
-# =========================
-# 6. BENEFITS
-# =========================
 def extract_benefits(text: str) -> str:
     t = text.lower()
     benefit_keywords = [
@@ -139,10 +113,6 @@ def extract_benefits(text: str) -> str:
 
     return "Unknown"
 
-
-# =========================
-# 7. PERSONAL INFORMATION REQUESTED
-# =========================
 def extract_requires_personal_info(text: str) -> str:
     t = text.lower()
     sensitive_terms = [
@@ -153,9 +123,6 @@ def extract_requires_personal_info(text: str) -> str:
     return "Yes" if any(k in t for k in sensitive_terms) else "No"
 
 
-# =========================
-# 8. MAIN EXTRACTOR ENTRY POINT
-# =========================
 def extract_job_features(raw_text: str) -> dict:
     text = raw_text or ""
 
