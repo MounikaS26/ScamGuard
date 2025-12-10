@@ -1,181 +1,276 @@
 {% extends "base.html" %}
-{% block title %}Admin Review – ScamGuard{% endblock %}
+{% block title %}Admin – Needs Review Queue{% endblock %}
 
 {% block content %}
 
 <style>
-.review-header {
+    .review-extra {
+    margin-top: 0.8rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed rgba(148, 163, 184, 0.5);
+    font-size: 0.9rem;
+  }
+  .review-extra h3 {
+    margin: 0 0 0.3rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .review-extra ul {
+    margin: 0;
+    padding-left: 1.1rem;
+  }
+  .review-extra li {
+    margin-bottom: 0.15rem;
+  }
+  .review-extra.muted {
+    font-size: 0.85rem;
+    color: #9ca3af;
+  }
+  .review-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 25px;
-}
-
-.review-header h2 {
-    font-size: 28px;
-    font-weight: 700;
-    color: #222;
-}
-
-.review-count {
-    background: #ffdd57;
-    color: #8a6d00;
-    padding: 6px 14px;
-    border-radius: 8px;
+    margin-bottom: 1.5rem;
+  }
+  .review-header h1 {
+    margin: 0;
+    font-size: 1.9rem;
+  }
+  .review-count {
+    background: #facc15;
+    color: #1f2937;
+    padding: 0.3rem 0.8rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
     font-weight: 600;
-    font-size: 14px;
-}
+  }
 
-.review-grid {
+  .review-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-    gap: 20px;
-}
+    gap: 1.5rem;
+  }
+  @media (min-width: 960px) {
+    .review-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
 
-.review-card {
-    border-radius: 14px;
-    padding: 18px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    border-left: 5px solid #ffcd38;
-    transition: 0.2s ease;
-}
+  .review-card {
+    border-left: 4px solid #facc15;
+  }
 
-.review-card:hover {
-    transform: translateY(-2px);
-}
-
-.label-tag {
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 13px;
+  .review-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
     font-weight: 600;
-    display: inline-block;
-}
+    background: rgba(250, 204, 21, 0.15);
+    border: 1px solid rgba(250, 204, 21, 0.6);
+    color: #facc15;
+    margin-bottom: 0.4rem;
+  }
 
-.label-yellow {
-    background: #ffed9c;
-    color: #7a5a00;
-}
+  .review-meta {
+    font-size: 0.8rem;
+    color: var(--muted, #9ca3af);
+    margin-top: 0.4rem;
+  }
 
-.card-title {
-    font-size: 18px;
-    font-weight: 700;
-    margin-bottom: 6px;
-}
+  .preview-text {
+    margin-top: 0.6rem;
+    font-size: 0.9rem;
+    color: #e5e7eb;
+  }
 
-.card-desc {
-    font-size: 14px;
-    margin-bottom: 10px;
-}
-
-.card-meta {
-    font-size: 12px;
-    margin-bottom: 12px;
-}
-
-.actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 12px;
-}
-
-.btn-review {
-    padding: 6px 12px;
-    border-radius: 6px;
-    border: none;
-    font-weight: 600;
+  details.review-details {
+    margin-top: 0.4rem;
+  }
+  details.review-details summary {
     cursor: pointer;
-    font-size: 14px;
-}
-
-.btn-real {
-    background: #d4f7d0;
-    color: #177a0a;
-}
-
-.btn-fake {
-    background: #ffd2d2;
-    color: #a11a1a;
-}
-
-.toggle-raw {
-    background: none;
-    border: 0;
-    color: #007bff;
-    cursor: pointer;
-    margin-bottom: 10px;
-    font-size: 14px;
-}
-
-.raw-text {
+    font-size: 0.8rem;
+    color: #60a5fa;
+    list-style: none;
+  }
+  details.review-details summary::-webkit-details-marker {
     display: none;
+  }
+  .full-text {
+    margin-top: 0.4rem;
+    font-size: 0.9rem;
     white-space: pre-wrap;
+  }
+
+  /* User answers block */
+  details.user-extra {
+    margin-top: 0.6rem;
+  }
+  details.user-extra summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #a5b4fc;
+    list-style: none;
+  }
+  details.user-extra summary::-webkit-details-marker {
+    display: none;
+  }
+  .user-extra-body {
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+    color: #e5e7eb;
+  }
+  .user-extra-body p {
+    margin: 0.15rem 0;
+  }
+
+  /* Buttons */
+  .actions button {
+    padding: 8px 16px;
     border-radius: 8px;
-    padding: 10px;
-    font-size: 13px;
-    margin-top: 8px;
-    border: 1px solid #e1e1e1;
-}
+    font-size: 15px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  /* REAL button */
+  .btn-real {
+    background: #1b5e20;
+    color: #d7ffe0;
+    border: 1px solid #2ecc71;
+  }
+  .btn-real:hover {
+    background: #2ecc71;
+    color: #0d2b14;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+  }
+
+  /* FAKE button */
+  .btn-fake {
+    background: #7b1e1e;
+    color: #ffe5e5;
+    border: 1px solid #ff6b6b;
+  }
+  .btn-fake:hover {
+    background: #ff6b6b;
+    color: #3b0b0b;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+  }
+
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+  }
 </style>
 
 <div class="review-header">
-    <h1>🛠️ Admin – Needs Review Queue</h1>
-    <div class="review-count">
-        {{ items|length }} Pending Reviews
-    </div>
+  <h1>🛠️ Admin – Needs Review Queue</h1>
+  <span class="review-count">{{ items|length }} pending</span>
 </div>
 
-{% if items|length == 0 %}
-<div style="padding:20px; border-radius:10px; text-align:center;">
-    <h3>No items need review 🎉</h3>
-    <p>All predictions are currently resolved.</p>
-</div>
-{% endif %}
+{% if not items %}
+  <div class="card">
+    <h2>No items need review 🎉</h2>
+    <p class="sub">All “Needs Review” predictions have been resolved.</p>
+  </div>
+{% else %}
 
-<div class="review-grid">
+  <div class="review-grid">
+    {% for item in items %}
+      <article class="card review-card">
+        <span class="review-pill">Needs Review</span>
 
-{% for item in items %}
-    <div class="review-card">
+        <h2 style="margin:0.2rem 0 0.3rem;">
+          Job Title: {{ item.title }}
+        </h2>
 
-        <span class="label-tag label-yellow">Needs Review</span>
-
-        <h3 class="card-title">{{ item.title }}</h3>
-        <p class="card-desc">{{ item.desc }}</p>
-
-        <div class="card-meta">
-            <b>User:</b> {{ item.user_id }} <br>
-            <b>Confidence:</b> {{ item.confidence or 'N/A' }}% <br>
-            <b>Date:</b> {{ item.created_at|format_datetime }}
+        <div class="review-meta">
+          <div><strong>User:</strong> {{ item.user_id }}</div>
+          <div><strong>Confidence:</strong>
+            {% if item.confidence is not none %}
+              {{ "%.2f"|format(item.confidence) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </div>
+          <div><strong>Date:</strong> {{ item.created_at|format_datetime }}</div>
         </div>
 
-        <!-- Toggle raw text -->
-        <button class="toggle-raw" onclick="toggleRaw({{ item.id }})">
-            View Full Text
-        </button>
+        {# short preview only #}
+        <p class="preview-text">
+          {{ item.raw[:260] }}{% if item.raw|length > 260 %}…{% endif %}
+        </p>
 
-        <div id="raw-{{ item.id }}" class="raw-text">
-            {{ item.raw }}
-        </div>
+        <details class="review-details">
+          <summary data-closed="View full text" data-open="Hide text">
+            View full text
+          </summary>
+          <div class="full-text">{{ item.raw }}</div>
+        </details>
+           {# Extra answers from user, if any #}
+{% set ans = answers_by_log.get(item.id) %}
+<div style="margin-top:0.8rem; font-size:0.85rem;">
+  {% if ans %}
+    <strong>Extra answers from user:</strong>
+    <ul style="margin:0.4rem 0 0.2rem 1.1rem; padding:0;">
+      {% if ans.source %}
+        <li><b>Source:</b> {{ ans.source }}</li>
+      {% endif %}
+      {% if ans.money_asked %}
+        <li>
+          <b>Money requested?</b> {{ ans.money_asked }}
+          {% if ans.money_details %}
+            – {{ ans.money_details }}
+          {% endif %}
+        </li>
+      {% endif %}
+      {% if ans.personal_info_asked %}
+        <li>
+          <b>Sensitive info requested?</b> {{ ans.personal_info_asked }}
+          {% if ans.personal_info_details %}
+            – {{ ans.personal_info_details }}
+          {% endif %}
+        </li>
+      {% endif %}
+      {% if ans.extra_notes %}
+        <li><b>User note:</b> {{ ans.extra_notes }}</li>
+      {% endif %}
+    </ul>
+  {% else %}
+    <span style="color:#9ca3af;">No extra answers provided by user.</span>
+  {% endif %}
+</div>  
 
         <div class="actions">
-            <form method="POST" action="/admin/review/{{ item.id }}/set-real">
-                <button class="btn-review btn-real" type="submit">Mark Real</button>
-            </form>
+          <form method="POST" action="{{ url_for('admin_mark_real', log_id=item.id) }}">
+            <button class="btn-real" type="submit">Mark Real</button>
+          </form>
 
-            <form method="POST" action="/admin/review/{{ item.id }}/set-fake">
-                <button class="btn-review btn-fake" type="submit">Mark Fake</button>
-            </form>
+          <form method="POST" action="{{ url_for('admin_mark_fake', log_id=item.id) }}">
+            <button class="btn-fake" type="submit">Mark Fake</button>
+          </form>
         </div>
-    </div>
-{% endfor %}
+      </article>
+    {% endfor %}
+  </div>
 
-</div>
+{% endif %}
 
 <script>
-function toggleRaw(id) {
-    const box = document.getElementById("raw-" + id);
-    box.style.display = box.style.display === "block" ? "none" : "block";
-}
+  // Change summary label when details is opened/closed
+  document.querySelectorAll('details.review-details').forEach(d => {
+    const s = d.querySelector('summary');
+    const closed = s.dataset.closed || 'View full text';
+    const open = s.dataset.open || 'Hide text';
+    const update = () => { s.textContent = d.open ? open : closed; };
+    update();
+    d.addEventListener('toggle', update);
+  });
 </script>
 
 {% endblock %}
