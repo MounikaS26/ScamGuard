@@ -321,3 +321,82 @@ textarea{ min-height: 220px; }
   color: #bbf7d0;
   border: 1px solid #34d399;
 }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.80);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  height: 30%;
+}
+
+.modal {
+  background: #0f172a;
+  border-radius: 0.75rem;
+  padding: 1.5rem 1.75rem;
+  max-width: 640px;
+  width: 50%;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.55);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+}
+
+.modal .form-group {
+  margin-top: 0.8rem;
+}
+
+.modal input[type="text"],
+.modal textarea,
+.modal select {
+  width: 100%;
+}
+
+.review-form-group {
+    margin-bottom: 16px;
+}
+
+.review-label {
+    font-weight: 600;
+    font-size: 0.93rem;
+    color: #e5e7eb;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.review-select,
+.review-textarea {
+    width: 100%;
+    padding: 9px 12px;
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    color: #f3f4f6;
+    font-size: 0.92rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.review-select:focus,
+.review-textarea:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.25);
+}
+
+.review-textarea {
+    height: 70px;
+    resize: vertical;
+}
+
+.review-textarea.notes{
+  height: 90px;
+}
+
+.section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f9fafb;
+    margin: 20px 0 6px;
+    border-left: 4px solid #3b82f6;
+    padding-left: 10px;
+}

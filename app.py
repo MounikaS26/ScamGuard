@@ -7,7 +7,7 @@ from datetime import datetime
 from supabase import create_client
 from scipy.sparse import hstack, csr_matrix
 from data.text_extractor import extract_job_features
-from data.db import init_db, insert_log, fetch_logs, delete_log, get_admin_stats, save_review_context
+from data.db import init_db, insert_log, fetch_logs, delete_log, save_review_answers, fetch_review_answers_for_logs, get_admin_stats
 
 # db helpers
 from data.db import (
@@ -336,7 +336,6 @@ def predict_with_ensemble(title, company_profile, description, requirements, ben
 
     return label, confidence_pct, per_model, final_proba
 
-# ========================= Prediction Page =========================
 @app.route("/index", methods=["GET", "POST"])
 @login_required
 def index():
@@ -345,10 +344,9 @@ def index():
     input_text = None
     error_message = None
     extracted = None
-    log_id_for_review = None
-
     per_model = {}
-    final_proba = None  # probability of "fake" from the ensemble
+    final_proba = None
+
     if request.method == "POST":
         raw_text = request.form.get("job_posting", "").strip()
         input_text = raw_text
@@ -357,18 +355,13 @@ def index():
         if not raw_text:
             error_message = "Please paste a job posting first."
         else:
-            # Parse sections (title, company_profile, description, requirements, benefits)
             title, company_profile, description, requirements, benefits = parse_job_posting(raw_text)
 
-            # Run ensemble
-            # Expected: label in {0,1}, confidence in [0..100], per_model: dict, final_proba in [0..1]
             label, confidence, per_model, final_proba = predict_with_ensemble(
                 title, company_profile, description, requirements, benefits
             )
 
-            # Determine UI label with review band
-            # DEFAULT_THRESHOLD and REVIEW_BAND should be defined at module level
-            # final_proba is P(fake). If it's close to threshold => Needs Review.
+            # final_proba = P(fake)
             needs_review = False
             if final_proba is not None:
                 needs_review = abs(final_proba - DEFAULT_THRESHOLD) <= REVIEW_BAND
@@ -382,38 +375,32 @@ def index():
 
             prediction = ui_text
 
-            # Persist log
-            try:
-                 # persist the log
-                user_id = session.get("user_id", "anonymous")
-                excerpt = (input_text or "").strip().replace("\n", " ")
-                log_id = insert_log(
-                  user_id=user_id,
-                  text_excerpt=input_text,
-                  prediction_label=stored_label,
-                  confidence=(float(confidence) if confidence is not None else None),
-                  was_needs_review=(1 if label == "Needs Review" else 0)
-                )
-                if needs_review:
-                 log_id_for_review = log_id
+            # ---- save log and get its ID ----
+            user_id = session.get("user_id", "anonymous")
+            log_id = insert_log(
+                user_id=user_id,
+                text_excerpt=input_text,
+                prediction_label=stored_label,
+                confidence=(float(confidence) if confidence is not None else None),
+                was_needs_review=(1 if needs_review else 0),
+            )
 
-            except Exception as e:
-                import traceback; traceback.print_exc()
-                flash(f"Saved prediction but could not store history: {e}", "warning")
+            # ---- redirect to info page ONLY when Needs Review ----
+            if needs_review:
+                return redirect(url_for("review_info", log_id=log_id))
 
-    # Single render path (works for GET and POST)
+    # normal render for GET or non-review predictions
     return render_template(
         "index.html",
         prediction=prediction,
-        confidence=confidence,            
+        confidence=confidence,
         input_text=input_text,
         error_message=error_message,
-        per_model=per_model or {},         
-        final_proba=final_proba,          
+        per_model=per_model or {},
+        final_proba=final_proba,
         ensemble_threshold=DEFAULT_THRESHOLD,
         review_band=REVIEW_BAND,
         extracted=extracted,
-        log_id_for_review=log_id_for_review,
     )
 
 @app.route("/info", methods=["GET", "POST"])
@@ -559,52 +546,9 @@ def admin_dashboard():
     except Exception as e:
         print(f"Error loading admin dashboard: {e}")
 
-    return render_template("admin_dashboard.html", stats=stats, users=users)
+    stats = get_admin_stats() 
 
-@app.route("/admin/review")
-@login_required
-def admin_review():
-    if int(session.get("permission_level", 0)) < 1:
-        return redirect(url_for("index"))
-
-    from data.db import get_db
-    with get_db() as conn:
-        cur = conn.execute("""
-            SELECT id, user_id, text_excerpt, prediction_label,
-                   confidence, created_at, was_needs_review
-            FROM prediction_logs
-            WHERE prediction_label = 'Needs Review'
-            ORDER BY id DESC
-        """)
-        rows = cur.fetchall()
-
-    items = []
-    for r in rows:
-        txt = r["text_excerpt"] or ""
-        # Title = first line, or first 80 chars
-        first_line = txt.splitlines()[0].strip()
-        if len(first_line) > 80:
-            title = first_line[:80].rstrip() + "…"
-        else:
-            title = first_line
-
-        # Short preview (first 220 chars)
-        preview = txt[:220].rstrip()
-        if len(txt) > 220:
-            preview += "…"
-
-        items.append({
-            "id": r["id"],
-            "user_id": r["user_id"],
-            "title": title,
-            "desc": preview,       # short preview only
-            "raw": txt,            # full text
-            "confidence": r["confidence"],
-            "created_at": r["created_at"],
-        })
-
-    return render_template("admin_review.html", items=items)
-
+    return render_template("admin_dashboard.html",users=users,  stats=stats)
 
 @app.post("/admin/review/<int:log_id>/set-real")
 @login_required
@@ -625,7 +569,104 @@ def admin_mark_fake(log_id):
     flash("Marked as Fake.", "success")
     return redirect(url_for("admin_review"))
 
-from data.db import save_review_context  # add to imports at top
+@app.route("/review-info/<int:log_id>", methods=["GET", "POST"])
+@login_required
+def review_info(log_id: int):
+    # load the original prediction_log row so we can show title/text
+    from data.db import get_db
+    with get_db() as conn:
+        cur = conn.execute(
+            """
+            SELECT id, user_id, text_excerpt, prediction_label, confidence, created_at
+            FROM prediction_logs
+            WHERE id = ?
+            """,
+            (log_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        flash("Review item not found.", "warning")
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        user_id = session.get("user_id", "anonymous")
+
+        source = request.form.get("source")
+        money_asked = request.form.get("money_asked")
+        money_details = request.form.get("money_details")
+        personal_info_asked = request.form.get("personal_info_asked")
+        personal_info_details = request.form.get("personal_info_details")
+        extra_notes = request.form.get("extra_notes")
+
+        save_review_answers(
+            log_id=log_id,
+            user_id=user_id,
+            source=source,
+            money_asked=money_asked,
+            money_details=money_details,
+            personal_info_asked=personal_info_asked,
+            personal_info_details=personal_info_details,
+            extra_notes=extra_notes,
+        )
+
+        flash("Thanks! Your answers were sent to the review team.", "success")
+        # go back to full scanner (and keep the session as-is)
+        return redirect(url_for("index"))
+
+    # GET – render the page
+    title_line = row["text_excerpt"].split("\n", 1)[0]
+    return render_template(
+        "info.html",
+        log_id=row["id"],
+        title=title_line,
+        raw_text=row["text_excerpt"],
+        decision=row["prediction_label"],
+        confidence=row["confidence"],
+        created_at=row["created_at"],
+    )
+
+@app.route("/admin/review")
+@login_required
+def admin_review():
+    if int(session.get("permission_level", 0)) < 1:
+        return redirect(url_for("index"))
+
+    from data.db import get_db
+    with get_db() as conn:
+        cur = conn.execute(
+            """
+            SELECT id, user_id, text_excerpt, prediction_label,
+                   confidence, created_at
+            FROM prediction_logs
+            WHERE prediction_label = 'Needs Review'
+            ORDER BY id DESC
+            """
+        )
+        rows = cur.fetchall()
+
+    items = []
+    log_ids = []
+    for r in rows:
+        txt = r["text_excerpt"] or ""
+        title = txt.split("\n", 1)[0].strip()
+        items.append({
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "title": title,
+            "raw": txt,
+            "confidence": r["confidence"],
+            "created_at": r["created_at"],
+        })
+        log_ids.append(r["id"])
+
+    answers_by_log = fetch_review_answers_for_logs(log_ids)
+
+    return render_template(
+        "admin_review.html",
+        items=items,
+        answers_by_log=answers_by_log,
+    )
 
 # ========================= Health =========================
 @app.route("/health")
