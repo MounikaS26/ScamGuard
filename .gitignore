@@ -1,16 +1,10 @@
+# Python cache / env
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-
-venv/
+.venv/
 env/
 
-.vscode/
-.idea/
+# Big data files
+*.csv
 
-*.db
-*.sqlite3
+venv/
 
-*.log
